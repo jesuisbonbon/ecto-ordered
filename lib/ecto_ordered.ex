@@ -33,7 +33,7 @@ defmodule EctoOrdered do
 
   defmodule Options do
     defstruct position_field: :position, move_field: :move,
-      rank_field: :rank, scope_field: nil, module: nil
+      rank_field: :rank, scope_field: nil, module: nil, join: nil, field_value: nil
   end
 
   import Ecto.Query
@@ -49,22 +49,24 @@ defmodule EctoOrdered do
   - `rank_field` the field in which the ranking should be stored
   - `scope` the field in which the scope for the order should be stored (optional)
   """
-  def set_order(changeset, position_field \\ :position, rank_field \\ :rank, scope_field \\ nil) do
+  def set_order(changeset, position_field \\ :position, rank_field \\ :rank, scope_field \\ nil, join \\ nil, field_value \\ nil) do
     changeset
     |> prepare_changes(fn changeset ->
       case changeset.action do
-        :insert -> EctoOrdered.before_insert changeset, position_field, rank_field, scope_field
-        :update -> EctoOrdered.before_update changeset, position_field, rank_field, scope_field
+        :insert -> EctoOrdered.before_insert changeset, position_field, rank_field, scope_field, join, field_value
+        :update -> EctoOrdered.before_update changeset, position_field, rank_field, scope_field, join, field_value
       end
     end)
   end
 
   @doc false
-  def before_insert(cs, position_field, rank_field, scope_field) do
+  def before_insert(cs, position_field, rank_field, scope_field, join \\ nil, field_value \\ nil) do
     options = %Options{
       position_field: position_field,
       rank_field: rank_field,
       scope_field: scope_field,
+      join: join,
+      field_value: field_value,
       module: cs.data.__struct__
     }
 
@@ -78,11 +80,13 @@ defmodule EctoOrdered do
   end
 
   @doc false
-  def before_update(cs, position_field, rank_field, scope_field \\ nil) do
+  def before_update(cs, position_field, rank_field, scope_field \\ nil, join \\ nil, field_value \\ nil) do
     options = %Options{
       position_field: position_field,
       rank_field: rank_field,
       scope_field: scope_field,
+      join: join,
+      field_value: field_value,
       module: cs.data.__struct__
     }
     case {fetch_change(cs, position_field), fetch_change(cs, options.move_field)} do
@@ -356,15 +360,19 @@ defmodule EctoOrdered do
   defp rank_query(options) do
     options.module
     |> ranked(options.rank_field)
-  end
+  end    
 
-  defp scope_query(query, %Options{scope_field: scope_field}, cs) do
+  defp scope_query(query, %Options{scope_field: scope_field, join: join}, cs) when is_nil(join) do
     scope = get_field(cs, scope_field)
     if scope do
-      (from q in query, where: field(q, ^scope_field) == ^scope)
+        (from q in query, where: field(q, ^scope_field) == ^scope)
     else
       query
     end
+  end
+
+  defp scope_query(query, %Options{scope_field: scope_field, join: join, field_value: field_value}, cs) do
+    (from q in query, join: u in ^join, where: ^"u.#{scope_field}" == ^field_value)
   end
 
 end
